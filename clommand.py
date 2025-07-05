@@ -9,6 +9,8 @@ import readline
 import subprocess
 import tempfile
 import logging
+import textwrap
+import warnings
 from datetime import datetime
 from typing import List, Dict, Optional
 import anthropic
@@ -242,6 +244,19 @@ class ClaudeREPL:
         # Add handler to logger
         self.logger.addHandler(file_handler)
         
+        # Configure warnings to go to the logger instead of stderr
+        logging.captureWarnings(True)
+        warnings_logger = logging.getLogger('py.warnings')
+        
+        # Remove any existing handlers from warnings logger
+        for handler in warnings_logger.handlers[:]:
+            warnings_logger.removeHandler(handler)
+        
+        # Set level and add our file handler
+        warnings_logger.setLevel(logging.WARNING)
+        warnings_logger.addHandler(file_handler)
+        warnings_logger.propagate = False  # Prevent double logging
+        
         self.logger.info(f"Logging initialized at level: {self.current_log_level}")
     
     def _ensure_system_prompt_exists(self):
@@ -367,7 +382,7 @@ class ClaudeREPL:
                 response_data = {
                     "content": response.content[0].text,
                     "model": response.model,
-                    "usage": response.usage.dict() if hasattr(response, 'usage') and response.usage else None,
+                    "usage": response.usage.model_dump() if hasattr(response, 'usage') and response.usage else None,
                     "id": response.id if hasattr(response, 'id') else None
                 }
                 self.logger.trace(f"Full API response:\n{json.dumps(response_data, indent=2, ensure_ascii=False)}")
@@ -378,6 +393,9 @@ class ClaudeREPL:
             self.logger.error(error_msg)
             return error_msg
     
+    def _format_response(self, text: str) -> str:
+        """Format response text to wrap at 75 characters with word boundaries"""
+        return textwrap.fill(text, width=75, break_long_words=False, break_on_hyphens=False)
     
     def _handle_command(self, command: str) -> bool:
         command = command.strip().lower()
@@ -543,9 +561,10 @@ class ClaudeREPL:
                 
                 self.current_chat.add_message("user", user_input)
                 
-                print("\nClaude:", end=" ")
+                print("\nClaude:")
                 response = self._get_claude_response(user_input)
-                print(response)
+                formatted_response = self._format_response(response)
+                print(formatted_response)
                 
                 self.current_chat.add_message("assistant", response)
                 
