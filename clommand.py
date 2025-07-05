@@ -336,7 +336,6 @@ class ClaudeREPL:
             
             messages = [{"role": msg["role"], "content": msg["content"]} 
                        for msg in self.current_chat.messages]
-            messages.append({"role": "user", "content": user_input})
             
             system_prompt = self._get_system_prompt()
             model = self.model_options[self.current_model]
