@@ -130,8 +130,6 @@ class ClaudeREPL:
             'sonnet': 'claude-sonnet-4-20250514',
             'opus': 'claude-opus-4-20250514'
         }
-        self.current_model = 'haiku'  # Default to haiku
-        
         # Logging configuration
         self.log_levels = {
             'trace': 5,  # Custom level below DEBUG for full API tracing
@@ -141,7 +139,11 @@ class ClaudeREPL:
             'error': logging.ERROR
         }
         self.config_file = "clommand_config.json"
-        self.current_log_level = self._load_log_level()
+        
+        # Load configuration
+        config = self._load_config()
+        self.current_model = config.get('model', 'haiku')
+        self.current_log_level = config.get('log_level', 'info')
         
         self._setup_logging()
         self._setup_client()
@@ -275,34 +277,40 @@ class ClaudeREPL:
         except FileNotFoundError:
             return "You are Claude, an AI assistant created by Anthropic."
     
-    def _load_log_level(self) -> str:
-        """Load log level from config file, defaulting to 'info' if not found"""
+    def _load_config(self) -> dict:
+        """Load configuration from config file, returning defaults if not found"""
         try:
             with open(self.config_file, 'r') as f:
-                config = json.load(f)
-                return config.get('log_level', 'info')
-        except (FileNotFoundError, json.JSONDecodeError, KeyError):
-            return 'info'
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
     
-    def _save_log_level(self, level: str):
-        """Save log level to config file"""
+    def _save_config(self, updates: dict):
+        """Save configuration updates to config file"""
         try:
             # Load existing config or create new one
-            config = {}
-            try:
-                with open(self.config_file, 'r') as f:
-                    config = json.load(f)
-            except (FileNotFoundError, json.JSONDecodeError):
-                pass
+            config = self._load_config()
             
-            # Update log level
-            config['log_level'] = level
+            # Update with new values
+            config.update(updates)
             
             # Save config
             with open(self.config_file, 'w') as f:
                 json.dump(config, f, indent=2)
         except Exception as e:
-            self.logger.warning(f"Could not save log level to config: {e}")
+            if hasattr(self, 'logger'):
+                self.logger.warning(f"Could not save config: {e}")
+    
+    def _show_configuration(self):
+        """Display current configuration on startup"""
+        config_info = f"""Configuration:
+  Model: {self.current_model} ({self.model_options[self.current_model]})
+  Log Level: {self.current_log_level}
+  System Prompt: {'custom' if os.path.exists(self.system_prompt_file) else 'default'}"""
+        
+        print(config_info)
+        if hasattr(self, 'logger'):
+            self.logger.info(f"Started with model={self.current_model}, log_level={self.current_log_level}")
     
     def _open_system_prompt_in_editor(self):
         """Open system prompt file in editor with proper terminal handling"""
@@ -533,6 +541,7 @@ class ClaudeREPL:
                 if model_name in self.model_options:
                     self.current_model = model_name
                     current_full_model = self.model_options[self.current_model]
+                    self._save_config({'model': model_name})  # Persist the setting
                     self.logger.info(f"Switched to model: {self.current_model} ({current_full_model})")
                     print(f"Switched to model: {self.current_model} ({current_full_model})")
                 else:
@@ -553,7 +562,7 @@ class ClaudeREPL:
                 if log_level in self.log_levels:
                     self.current_log_level = log_level
                     self._setup_logging()  # Reconfigure logging with new level
-                    self._save_log_level(log_level)  # Persist the setting
+                    self._save_config({'log_level': log_level})  # Persist the setting
                     print(f"Log level set to: {self.current_log_level}")
                     self.logger.info(f"Log level changed to: {self.current_log_level}")
                 else:
@@ -584,6 +593,10 @@ class ClaudeREPL:
     def run(self):
         print("Claude REPL - Command Line Chatbot")
         print("Type /help for commands, or start chatting!")
+        print("=" * 50)
+        
+        # Show current configuration
+        self._show_configuration()
         print("=" * 50)
         
         while self.running:
