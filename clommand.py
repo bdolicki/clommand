@@ -140,7 +140,8 @@ class ClaudeREPL:
             'warning': logging.WARNING,
             'error': logging.ERROR
         }
-        self.current_log_level = 'info'  # Default to info
+        self.config_file = "clommand_config.json"
+        self.current_log_level = self._load_log_level()
         
         self._setup_logging()
         self._setup_client()
@@ -273,6 +274,35 @@ class ClaudeREPL:
                 return f.read().strip()
         except FileNotFoundError:
             return "You are Claude, an AI assistant created by Anthropic."
+    
+    def _load_log_level(self) -> str:
+        """Load log level from config file, defaulting to 'info' if not found"""
+        try:
+            with open(self.config_file, 'r') as f:
+                config = json.load(f)
+                return config.get('log_level', 'info')
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            return 'info'
+    
+    def _save_log_level(self, level: str):
+        """Save log level to config file"""
+        try:
+            # Load existing config or create new one
+            config = {}
+            try:
+                with open(self.config_file, 'r') as f:
+                    config = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+            
+            # Update log level
+            config['log_level'] = level
+            
+            # Save config
+            with open(self.config_file, 'w') as f:
+                json.dump(config, f, indent=2)
+        except Exception as e:
+            self.logger.warning(f"Could not save log level to config: {e}")
     
     def _open_system_prompt_in_editor(self):
         """Open system prompt file in editor with proper terminal handling"""
@@ -501,6 +531,7 @@ class ClaudeREPL:
                 if log_level in self.log_levels:
                     self.current_log_level = log_level
                     self._setup_logging()  # Reconfigure logging with new level
+                    self._save_log_level(log_level)  # Persist the setting
                     print(f"Log level set to: {self.current_log_level}")
                     self.logger.info(f"Log level changed to: {self.current_log_level}")
                 else:

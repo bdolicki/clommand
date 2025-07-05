@@ -29,3 +29,6 @@ chat_history/
 
 # Logs
 logs/
+
+# Configuration
+clommand_config.json
