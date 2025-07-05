@@ -14,6 +14,7 @@ import warnings
 from datetime import datetime
 from typing import List, Dict, Optional
 import anthropic
+import openai
 from dotenv import load_dotenv
 
 class ChatHistory:
@@ -126,9 +127,20 @@ class ClaudeREPL:
         
         # Model configuration with latest versions
         self.model_options = {
+            # Anthropic models
             'haiku': 'claude-3-5-haiku-20241022',
-            'sonnet': 'claude-sonnet-4-20250514',
-            'opus': 'claude-opus-4-20250514'
+            'sonnet': 'claude-sonnet-4-20250514', 
+            'opus': 'claude-opus-4-20250514',
+            # OpenAI models - latest versions
+            'gpt4': 'gpt-4o',
+            'gpt4-latest': 'chatgpt-4o-latest',
+            'gpt4-mini': 'gpt-4o-mini',
+            # Reasoning models
+            'o1': 'o1',
+            'o1-mini': 'o1-mini',
+            'o1-pro': 'o1-pro',
+            # Next generation models
+            'o4-mini': 'o4-mini'
         }
         # Logging configuration
         self.log_levels = {
@@ -303,14 +315,25 @@ class ClaudeREPL:
     
     def _show_configuration(self):
         """Display current configuration on startup"""
+        # Show available providers
+        providers = []
+        if self.anthropic_client:
+            providers.append("Anthropic")
+        if self.openai_client:
+            providers.append("OpenAI")
+        
+        provider_status = ", ".join(providers) if providers else "None"
+        current_provider = self._get_model_provider(self.current_model).title()
+        
         config_info = f"""Configuration:
-  Model: {self.current_model} ({self.model_options[self.current_model]})
+  Model: {self.current_model} ({self.model_options[self.current_model]}) [{current_provider}]
   Log Level: {self.current_log_level}
-  System Prompt: {'custom' if os.path.exists(self.system_prompt_file) else 'default'}"""
+  System Prompt: {'custom' if os.path.exists(self.system_prompt_file) else 'default'}
+  Available Providers: {provider_status}"""
         
         print(config_info)
         if hasattr(self, 'logger'):
-            self.logger.info(f"Started with model={self.current_model}, log_level={self.current_log_level}")
+            self.logger.info(f"Started with model={self.current_model}, log_level={self.current_log_level}, providers={provider_status}")
     
     def _open_system_prompt_in_editor(self):
         """Open system prompt file in editor with proper terminal handling"""
@@ -367,20 +390,46 @@ class ClaudeREPL:
             return False
     
     def _setup_client(self):
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
-        if not api_key:
-            print("Warning: ANTHROPIC_API_KEY not found in environment variables.")
-            print("Please set it to use Claude API functionality.")
-            return
+        # Initialize both clients if API keys are available
+        self.anthropic_client = None
+        self.openai_client = None
         
-        try:
-            self.client = anthropic.Anthropic(api_key=api_key)
-        except Exception as e:
-            print(f"Error initializing Claude client: {e}")
-    
-    def _get_claude_response(self, user_input: str) -> str:
+        # Setup Anthropic client
+        anthropic_key = os.environ.get('ANTHROPIC_API_KEY')
+        if anthropic_key:
+            try:
+                self.anthropic_client = anthropic.Anthropic(api_key=anthropic_key)
+            except Exception as e:
+                print(f"Error initializing Anthropic client: {e}")
+        
+        # Setup OpenAI client  
+        openai_key = os.environ.get('OPENAI_API_KEY')
+        if openai_key:
+            try:
+                self.openai_client = openai.OpenAI(api_key=openai_key)
+            except Exception as e:
+                print(f"Error initializing OpenAI client: {e}")
+        
+        # Set primary client for backward compatibility
+        self.client = self.anthropic_client or self.openai_client
+        
         if not self.client:
-            error_msg = "Error: Claude client not initialized. Please check your API key."
+            print("Warning: No API keys found.")
+            print("Set ANTHROPIC_API_KEY and/or OPENAI_API_KEY to use AI functionality.")
+    
+    def _get_model_provider(self, model_name: str) -> str:
+        """Determine which provider (anthropic/openai) handles the given model"""
+        anthropic_models = ['haiku', 'sonnet', 'opus']
+        return 'anthropic' if model_name in anthropic_models else 'openai'
+    
+    def _get_ai_response(self, user_input: str) -> str:
+        provider = self._get_model_provider(self.current_model)
+        model = self.model_options[self.current_model]
+        
+        # Check if the required client is available
+        client = self.anthropic_client if provider == 'anthropic' else self.openai_client
+        if not client:
+            error_msg = f"Error: {provider.title()} client not initialized. Please check your API key."
             self.logger.error(error_msg)
             return error_msg
         
@@ -391,45 +440,100 @@ class ClaudeREPL:
                        for msg in self.current_chat.messages]
             
             system_prompt = self._get_system_prompt()
-            model = self.model_options[self.current_model]
             
-            self.logger.info(f"Making API request to {model} with {len(messages)} messages")
+            self.logger.info(f"Making {provider} API request to {model} with {len(messages)} messages")
             
-            # Log full API request payload at trace level
-            if self.logger.isEnabledFor(5):  # TRACE level
-                request_payload = {
-                    "model": model,
-                    "max_tokens": 1024,
-                    "system": system_prompt,
-                    "messages": messages
-                }
-                self.logger.trace(f"Full API request payload:\n{json.dumps(request_payload, indent=2, ensure_ascii=False)}")
-            
-            response = self.client.messages.create(
-                model=model,
-                max_tokens=1024,
-                system=system_prompt,
-                messages=messages
-            )
-            
-            response_text = response.content[0].text
-            self.logger.debug(f"Received response: {response_text[:50]}...")
-            
-            # Log full API response at trace level
-            if self.logger.isEnabledFor(5):  # TRACE level
-                response_data = {
-                    "content": response.content[0].text,
-                    "model": response.model,
-                    "usage": response.usage.model_dump() if hasattr(response, 'usage') and response.usage else None,
-                    "id": response.id if hasattr(response, 'id') else None
-                }
-                self.logger.trace(f"Full API response:\n{json.dumps(response_data, indent=2, ensure_ascii=False)}")
-            
-            return response_text
+            if provider == 'anthropic':
+                return self._call_anthropic_api(client, model, system_prompt, messages)
+            else:
+                return self._call_openai_api(client, model, system_prompt, messages)
+                
         except Exception as e:
-            error_msg = f"Error getting Claude response: {e}"
+            error_msg = f"Error getting AI response: {e}"
             self.logger.error(error_msg)
             return error_msg
+    
+    def _call_anthropic_api(self, client, model: str, system_prompt: str, messages: list) -> str:
+        """Call Anthropic API with proper formatting"""
+        # Log full API request payload at trace level
+        if self.logger.isEnabledFor(5):  # TRACE level
+            request_payload = {
+                "model": model,
+                "max_tokens": 1024,
+                "system": system_prompt,
+                "messages": messages
+            }
+            self.logger.trace(f"Anthropic API request payload:\n{json.dumps(request_payload, indent=2, ensure_ascii=False)}")
+        
+        response = client.messages.create(
+            model=model,
+            max_tokens=1024,
+            system=system_prompt,
+            messages=messages
+        )
+        
+        response_text = response.content[0].text
+        self.logger.debug(f"Received Anthropic response: {response_text[:50]}...")
+        
+        # Log full API response at trace level
+        if self.logger.isEnabledFor(5):  # TRACE level
+            response_data = {
+                "content": response.content[0].text,
+                "model": response.model,
+                "usage": response.usage.model_dump() if hasattr(response, 'usage') and response.usage else None,
+                "id": response.id if hasattr(response, 'id') else None
+            }
+            self.logger.trace(f"Anthropic API response:\n{json.dumps(response_data, indent=2, ensure_ascii=False)}")
+        
+        return response_text
+    
+    def _call_openai_api(self, client, model: str, system_prompt: str, messages: list) -> str:
+        """Call OpenAI API with proper formatting"""
+        # o1 models don't support system messages
+        if model.startswith('o1') or model.startswith('o3') or model.startswith('o4'):
+            openai_messages = messages
+        else:
+            # Convert messages format for OpenAI (system message goes in messages array)
+            openai_messages = [{"role": "system", "content": system_prompt}] + messages
+        
+        # o1 models use different parameter name for max tokens
+        if model.startswith('o1') or model.startswith('o3') or model.startswith('o4'):
+            token_param = "max_completion_tokens"
+        else:
+            token_param = "max_tokens"
+        
+        # Log full API request payload at trace level
+        if self.logger.isEnabledFor(5):  # TRACE level
+            request_payload = {
+                "model": model,
+                token_param: 1024,
+                "messages": openai_messages
+            }
+            self.logger.trace(f"OpenAI API request payload:\n{json.dumps(request_payload, indent=2, ensure_ascii=False)}")
+        
+        # Create request parameters dynamically
+        request_params = {
+            "model": model,
+            token_param: 1024,
+            "messages": openai_messages
+        }
+        
+        response = client.chat.completions.create(**request_params)
+        
+        response_text = response.choices[0].message.content
+        self.logger.debug(f"Received OpenAI response: {response_text[:50]}...")
+        
+        # Log full API response at trace level
+        if self.logger.isEnabledFor(5):  # TRACE level
+            response_data = {
+                "content": response.choices[0].message.content,
+                "model": response.model,
+                "usage": response.usage.model_dump() if hasattr(response, 'usage') and response.usage else None,
+                "id": response.id if hasattr(response, 'id') else None
+            }
+            self.logger.trace(f"OpenAI API response:\n{json.dumps(response_data, indent=2, ensure_ascii=False)}")
+        
+        return response_text
     
     def _format_response(self, text: str) -> str:
         """Format response text to wrap at 75 characters while preserving existing newlines"""
@@ -539,6 +643,15 @@ class ClaudeREPL:
                 # "/model <name>" - switch model
                 model_name = parts[1].strip().lower()
                 if model_name in self.model_options:
+                    # Check if required client is available
+                    provider = self._get_model_provider(model_name)
+                    required_client = self.anthropic_client if provider == 'anthropic' else self.openai_client
+                    
+                    if not required_client:
+                        print(f"Error: {provider.title()} API key not configured.")
+                        print(f"Please set {provider.upper()}_API_KEY to use {model_name} model.")
+                        return True
+                    
                     self.current_model = model_name
                     current_full_model = self.model_options[self.current_model]
                     self._save_config({'model': model_name})  # Persist the setting
@@ -578,7 +691,7 @@ class ClaudeREPL:
             print("  /resume <filename> - Resume a previous chat")
             print("  /system   - Edit system prompt")
             print("  /model    - Show current model")
-            print("  /model <name> - Switch model (haiku, sonnet, opus)")
+            print(f"  /model <name> - Switch model ({', '.join(self.model_options.keys())})")
             print("  /log      - Show current log level")
             print("  /log <level> - Set log level (trace, debug, info, warning, error)")
             print("  /quit     - Exit the REPL")
@@ -612,7 +725,7 @@ class ClaudeREPL:
                         print("  /resume <filename> - Resume a previous chat")
                         print("  /system   - Edit system prompt")
                         print("  /model    - Show current model")
-                        print("  /model <name> - Switch model (haiku, sonnet, opus)")
+                        print(f"  /model <name> - Switch model ({', '.join(self.model_options.keys())})")
                         print("  /log      - Show current log level")
                         print("  /log <level> - Set log level (trace, debug, info, warning, error)")
                         print("  /quit     - Exit the REPL")
@@ -625,14 +738,23 @@ class ClaudeREPL:
                 if not user_input:
                     continue
                 
+                # Add user message to history first (needed for API context)
                 self.current_chat.add_message("user", user_input)
                 
-                print("\nClaude:")
-                response = self._get_claude_response(user_input)
-                formatted_response = self._format_response(response)
-                print(formatted_response)
+                print(f"\n{self._get_model_provider(self.current_model).title()} AI:")
+                response = self._get_ai_response(user_input)
                 
-                self.current_chat.add_message("assistant", response)
+                # Check if response is an error (starts with "Error:")
+                if response.startswith("Error:"):
+                    # Remove the user message from history since exchange failed
+                    self.current_chat.messages.pop()
+                    # Don't add error to chat history, just display it
+                    print(response)
+                else:
+                    # Normal response - add assistant response to chat history
+                    formatted_response = self._format_response(response)
+                    print(formatted_response)
+                    self.current_chat.add_message("assistant", response)
                 
             except KeyboardInterrupt:
                 print("\n\nUse /quit to exit gracefully.")
