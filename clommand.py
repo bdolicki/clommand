@@ -71,6 +71,9 @@ class ChatHistory:
     def load_from_file(cls, filepath: str) -> 'ChatHistory':
         chat = cls()
         if os.path.exists(filepath):
+            # Set filename to the loaded file's name to preserve it
+            chat.filename = os.path.basename(filepath)
+            
             with open(filepath, 'r') as f:
                 content = f.read()
                 lines = content.split('\n')

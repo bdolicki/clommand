@@ -353,7 +353,7 @@ class TestIntegration:
         shutil.rmtree(self.temp_dir)
     
     def test_full_chat_workflow(self):
-        """Test complete chat workflow: create -> save -> resume"""
+        """Test complete chat workflow: create -> save -> resume -> append"""
         # Create chat and add messages
         chat = ChatHistory()
         chat.add_message("user", "What is machine learning?")
@@ -362,6 +362,7 @@ class TestIntegration:
         # Save chat
         saved_path = chat.save_explicitly()
         assert os.path.exists(saved_path)
+        original_filename = chat.filename
         
         # Load chat
         loaded_chat = ChatHistory.load_from_file(saved_path)
@@ -369,6 +370,22 @@ class TestIntegration:
         assert loaded_chat.title == "what-machine-learning"
         assert loaded_chat.messages[0]["content"] == "What is machine learning?"
         assert loaded_chat.messages[1]["content"] == "Machine learning is a subset of AI."
+        
+        # Verify filename is preserved
+        assert loaded_chat.filename == original_filename
+        
+        # Add new message to resumed chat
+        loaded_chat.add_message("user", "Can you explain neural networks?")
+        loaded_chat.add_message("assistant", "Neural networks are computing systems inspired by biological neural networks.")
+        
+        # Verify new messages are saved to the same file
+        assert len(loaded_chat.messages) == 4
+        assert loaded_chat.filename == original_filename
+        
+        # Verify file contains all messages
+        reloaded_chat = ChatHistory.load_from_file(saved_path)
+        assert len(reloaded_chat.messages) == 4
+        assert reloaded_chat.messages[2]["content"] == "Can you explain neural networks?"
     
     def test_chat_file_naming_and_renaming(self):
         """Test chat file naming and automatic renaming"""
