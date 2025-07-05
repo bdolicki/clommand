@@ -8,6 +8,7 @@ import hashlib
 import readline
 import subprocess
 import tempfile
+import logging
 from datetime import datetime
 from typing import List, Dict, Optional
 import anthropic
@@ -113,8 +114,27 @@ class ClaudeREPL:
         self.client = None
         self.current_chat = ChatHistory()
         self.running = True
-        self.commands = ['/save', '/new', '/list', '/resume', '/quit', '/help', '/system']
+        self.commands = ['/save', '/new', '/list', '/resume', '/quit', '/help', '/system', '/model', '/log']
         self.system_prompt_file = "system_prompt.txt"
+        
+        # Model configuration with latest versions
+        self.model_options = {
+            'haiku': 'claude-3-5-haiku-20241022',
+            'sonnet': 'claude-sonnet-4-20250514',
+            'opus': 'claude-opus-4-20250514'
+        }
+        self.current_model = 'haiku'  # Default to haiku
+        
+        # Logging configuration
+        self.log_levels = {
+            'debug': logging.DEBUG,
+            'info': logging.INFO,
+            'warning': logging.WARNING,
+            'error': logging.ERROR
+        }
+        self.current_log_level = 'info'  # Default to info
+        
+        self._setup_logging()
         self._setup_client()
         self._setup_readline()
         self._ensure_system_prompt_exists()
@@ -158,7 +178,56 @@ class ClaudeREPL:
             # Return the full filename, not just the remaining part
             return matching_files
         
+        # If we're completing after "/model "
+        if buffer.startswith('/model '):
+            model_part = buffer[7:]  # Remove "/model "
+            model_names = list(self.model_options.keys())
+            
+            # Filter models that start with the current text
+            matching_models = [m for m in model_names if m.startswith(model_part)]
+            
+            return matching_models
+        
+        # If we're completing after "/log "
+        if buffer.startswith('/log '):
+            log_part = buffer[5:]  # Remove "/log "
+            log_levels = list(self.log_levels.keys())
+            
+            # Filter log levels that start with the current text
+            matching_levels = [l for l in log_levels if l.startswith(log_part)]
+            
+            return matching_levels
+        
         return []
+    
+    def _setup_logging(self):
+        """Configure logging to write to logs/ directory"""
+        # Create logs directory
+        os.makedirs("logs", exist_ok=True)
+        
+        # Create logger
+        self.logger = logging.getLogger('clommand')
+        self.logger.setLevel(self.log_levels[self.current_log_level])
+        
+        # Remove any existing handlers
+        for handler in self.logger.handlers[:]:
+            self.logger.removeHandler(handler)
+        
+        # Create file handler
+        log_filename = f"logs/clommand_{datetime.now().strftime('%Y%m%d')}.log"
+        file_handler = logging.FileHandler(log_filename, encoding='utf-8')
+        file_handler.setLevel(self.log_levels[self.current_log_level])
+        
+        # Create formatter
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        file_handler.setFormatter(formatter)
+        
+        # Add handler to logger
+        self.logger.addHandler(file_handler)
+        
+        self.logger.info(f"Logging initialized at level: {self.current_log_level}")
     
     def _ensure_system_prompt_exists(self):
         """Create default system prompt file if it doesn't exist"""
@@ -243,41 +312,56 @@ class ClaudeREPL:
     
     def _get_claude_response(self, user_input: str) -> str:
         if not self.client:
-            return "Error: Claude client not initialized. Please check your API key."
+            error_msg = "Error: Claude client not initialized. Please check your API key."
+            self.logger.error(error_msg)
+            return error_msg
         
         try:
+            self.logger.debug(f"Processing user input: {user_input[:50]}...")
+            
             messages = [{"role": msg["role"], "content": msg["content"]} 
                        for msg in self.current_chat.messages]
             messages.append({"role": "user", "content": user_input})
             
             system_prompt = self._get_system_prompt()
+            model = self.model_options[self.current_model]
+            
+            self.logger.info(f"Making API request to {model} with {len(messages)} messages")
             
             response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model=model,
                 max_tokens=1024,
                 system=system_prompt,
                 messages=messages
             )
             
-            return response.content[0].text
+            response_text = response.content[0].text
+            self.logger.debug(f"Received response: {response_text[:50]}...")
+            
+            return response_text
         except Exception as e:
-            return f"Error getting Claude response: {e}"
+            error_msg = f"Error getting Claude response: {e}"
+            self.logger.error(error_msg)
+            return error_msg
     
     
     def _handle_command(self, command: str) -> bool:
         command = command.strip().lower()
         
         if command == '/quit' or command == '/q':
+            self.logger.info("User initiated shutdown")
             self.running = False
             print("Goodbye!")
             return True
         
         elif command == '/save':
             filepath = self.current_chat.save_explicitly()
+            self.logger.info(f"Chat saved to: {filepath}")
             print(f"Chat saved to: {filepath}")
             return True
         
         elif command == '/new':
+            self.logger.info("Started new chat session")
             self.current_chat = ChatHistory()
             print("Started new chat session.")
             return True
@@ -300,6 +384,7 @@ class ClaudeREPL:
             filepath = os.path.join("chat_history", filename)
             if os.path.exists(filepath):
                 self.current_chat = ChatHistory.load_from_file(filepath)
+                self.logger.info(f"Resumed chat: {self.current_chat.title} with {len(self.current_chat.messages)} messages")
                 print(f"Resumed chat: {self.current_chat.title}")
                 print(f"Messages loaded: {len(self.current_chat.messages)}")
                 
@@ -332,6 +417,45 @@ class ClaudeREPL:
             self._open_system_prompt_in_editor()
             return True
         
+        elif command.startswith('/model'):
+            parts = command.split(' ', 1)
+            if len(parts) == 1:
+                # Just "/model" - show current model
+                current_full_model = self.model_options[self.current_model]
+                print(f"Current model: {self.current_model} ({current_full_model})")
+            else:
+                # "/model <name>" - switch model
+                model_name = parts[1].strip().lower()
+                if model_name in self.model_options:
+                    self.current_model = model_name
+                    current_full_model = self.model_options[self.current_model]
+                    self.logger.info(f"Switched to model: {self.current_model} ({current_full_model})")
+                    print(f"Switched to model: {self.current_model} ({current_full_model})")
+                else:
+                    self.logger.warning(f"Invalid model requested: {model_name}")
+                    print(f"Unknown model: {model_name}")
+                    print(f"Available models: {', '.join(self.model_options.keys())}")
+            return True
+        
+        elif command.startswith('/log'):
+            parts = command.split(' ', 1)
+            if len(parts) == 1:
+                # Just "/log" - show current log level
+                print(f"Current log level: {self.current_log_level}")
+                print(f"Available levels: {', '.join(self.log_levels.keys())}")
+            else:
+                # "/log <level>" - switch log level
+                log_level = parts[1].strip().lower()
+                if log_level in self.log_levels:
+                    self.current_log_level = log_level
+                    self._setup_logging()  # Reconfigure logging with new level
+                    print(f"Log level set to: {self.current_log_level}")
+                    self.logger.info(f"Log level changed to: {self.current_log_level}")
+                else:
+                    print(f"Unknown log level: {log_level}")
+                    print(f"Available levels: {', '.join(self.log_levels.keys())}")
+            return True
+        
         elif command == '/help':
             print("Available commands:")
             print("  /save     - Save current chat history")
@@ -339,6 +463,10 @@ class ClaudeREPL:
             print("  /list     - List available chat histories")
             print("  /resume <filename> - Resume a previous chat")
             print("  /system   - Edit system prompt")
+            print("  /model    - Show current model")
+            print("  /model <name> - Switch model (haiku, sonnet, opus)")
+            print("  /log      - Show current log level")
+            print("  /log <level> - Set log level (debug, info, warning, error)")
             print("  /quit     - Exit the REPL")
             print("  /help     - Show this help message")
             return True
@@ -365,6 +493,10 @@ class ClaudeREPL:
                         print("  /list     - List available chat histories")
                         print("  /resume <filename> - Resume a previous chat")
                         print("  /system   - Edit system prompt")
+                        print("  /model    - Show current model")
+                        print("  /model <name> - Switch model (haiku, sonnet, opus)")
+                        print("  /log      - Show current log level")
+                        print("  /log <level> - Set log level (debug, info, warning, error)")
                         print("  /quit     - Exit the REPL")
                         print("  /help     - Show this help message")
                     else:

@@ -26,3 +26,6 @@ Thumbs.db
 
 # Chat history (local data)
 chat_history/
+
+# Logs
+logs/

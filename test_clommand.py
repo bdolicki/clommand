@@ -138,7 +138,7 @@ class TestClaudeREPL:
         repl = ClaudeREPL()
         assert repl.client is None
         assert repl.running is True
-        assert len(repl.commands) == 7
+        assert len(repl.commands) == 9
     
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test_key"})
     @patch("clommand.anthropic.Anthropic")
@@ -191,6 +191,38 @@ class TestClaudeREPL:
         completions = repl._get_completions("test", "/resume test")
         assert "test-chat.txt" in completions
         assert "another-chat.txt" not in completions
+    
+    def test_get_completions_model_names(self):
+        """Test model completion for /model command"""
+        repl = ClaudeREPL()
+        
+        # Test completion after /model 
+        completions = repl._get_completions("ha", "/model ha")
+        assert "haiku" in completions
+        assert "sonnet" not in completions
+        assert "opus" not in completions
+        
+        # Test completion for all models
+        completions = repl._get_completions("", "/model ")
+        assert "haiku" in completions
+        assert "sonnet" in completions
+        assert "opus" in completions
+    
+    def test_get_completions_log_levels(self):
+        """Test log level completion for /log command"""
+        repl = ClaudeREPL()
+        
+        # Test completion after /log 
+        completions = repl._get_completions("de", "/log de")
+        assert "debug" in completions
+        assert "info" not in completions
+        
+        # Test completion for all log levels
+        completions = repl._get_completions("", "/log ")
+        assert "debug" in completions
+        assert "info" in completions
+        assert "warning" in completions
+        assert "error" in completions
     
     def test_handle_command_quit(self):
         """Test /quit command"""
@@ -304,6 +336,101 @@ class TestClaudeREPL:
         assert result is True
         mock_open_editor.assert_called_once()
     
+    def test_handle_command_model_show(self, capsys):
+        """Test /model command to show current model"""
+        repl = ClaudeREPL()
+        
+        result = repl._handle_command("/model")
+        assert result is True
+        
+        captured = capsys.readouterr()
+        assert "Current model: haiku" in captured.out
+        assert "claude-3-5-haiku-20241022" in captured.out
+    
+    def test_handle_command_model_switch(self, capsys):
+        """Test /model command to switch models"""
+        repl = ClaudeREPL()
+        
+        # Switch to sonnet
+        result = repl._handle_command("/model sonnet")
+        assert result is True
+        assert repl.current_model == "sonnet"
+        
+        captured = capsys.readouterr()
+        assert "Switched to model: sonnet" in captured.out
+        assert "claude-sonnet-4-20250514" in captured.out
+        
+        # Switch to opus
+        result = repl._handle_command("/model opus")
+        assert result is True
+        assert repl.current_model == "opus"
+    
+    def test_handle_command_model_invalid(self, capsys):
+        """Test /model command with invalid model"""
+        repl = ClaudeREPL()
+        
+        result = repl._handle_command("/model invalid")
+        assert result is True
+        assert repl.current_model == "haiku"  # Should remain unchanged
+        
+        captured = capsys.readouterr()
+        assert "Unknown model: invalid" in captured.out
+        assert "Available models:" in captured.out
+    
+    def test_handle_command_log_show(self, capsys):
+        """Test /log command to show current log level"""
+        repl = ClaudeREPL()
+        
+        result = repl._handle_command("/log")
+        assert result is True
+        
+        captured = capsys.readouterr()
+        assert "Current log level: info" in captured.out
+        assert "Available levels:" in captured.out
+    
+    def test_handle_command_log_switch(self, capsys):
+        """Test /log command to switch log levels"""
+        repl = ClaudeREPL()
+        
+        # Switch to debug
+        result = repl._handle_command("/log debug")
+        assert result is True
+        assert repl.current_log_level == "debug"
+        
+        captured = capsys.readouterr()
+        assert "Log level set to: debug" in captured.out
+        
+        # Switch to error
+        result = repl._handle_command("/log error")
+        assert result is True
+        assert repl.current_log_level == "error"
+    
+    def test_handle_command_log_invalid(self, capsys):
+        """Test /log command with invalid level"""
+        repl = ClaudeREPL()
+        
+        result = repl._handle_command("/log invalid")
+        assert result is True
+        assert repl.current_log_level == "info"  # Should remain unchanged
+        
+        captured = capsys.readouterr()
+        assert "Unknown log level: invalid" in captured.out
+        assert "Available levels:" in captured.out
+    
+    def test_logging_setup(self):
+        """Test that logging is properly configured"""
+        repl = ClaudeREPL()
+        
+        # Check that logger exists
+        assert hasattr(repl, 'logger')
+        assert repl.logger.name == 'clommand'
+        
+        # Check that logs directory exists
+        assert os.path.exists("logs")
+        
+        # Check that log level is set correctly
+        assert repl.current_log_level == "info"
+    
     def test_handle_command_unknown(self, capsys):
         """Test unknown command"""
         repl = ClaudeREPL()
@@ -409,6 +536,28 @@ class TestClaudeREPL:
         mock_client.messages.create.assert_called_once()
         call_args = mock_client.messages.create.call_args
         assert call_args[1]['system'] == custom_prompt
+    
+    def test_model_selection_integration_with_api(self, mocker):
+        """Test that selected model is used in API calls"""
+        repl = ClaudeREPL()
+        
+        # Switch to opus model
+        repl.current_model = "opus"
+        
+        # Mock the API client
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.content = [Mock(text="Test response")]
+        mock_client.messages.create.return_value = mock_response
+        repl.client = mock_client
+        
+        # Make a request
+        response = repl._get_claude_response("Test input")
+        
+        # Verify correct model was used
+        mock_client.messages.create.assert_called_once()
+        call_args = mock_client.messages.create.call_args
+        assert call_args[1]['model'] == "claude-opus-4-20250514"
 
 
 class TestIntegration:
