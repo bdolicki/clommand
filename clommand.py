@@ -40,9 +40,14 @@ class ChatHistory:
             if first_user_msg:
                 self.title = self._generate_title(first_user_msg)
                 old_filename = self.filename
+                old_filepath = os.path.join("chat_history", old_filename)
                 self.filename = f"{self._sanitize_filename(self.title)}.txt"
-                if os.path.exists(old_filename) and old_filename != self.filename:
-                    os.rename(old_filename, self.filename)
+                new_filepath = os.path.join("chat_history", self.filename)
+                
+                # If files are different and old file exists, clean up the old file
+                if os.path.exists(old_filepath) and old_filename != self.filename:
+                    # Remove the old file since we'll save to the new location with meaningful name
+                    os.remove(old_filepath)
     
     def _generate_title(self, first_message: str) -> str:
         words = re.findall(r'\w+', first_message.lower())

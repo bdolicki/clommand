@@ -609,23 +609,30 @@ class TestIntegration:
         assert reloaded_chat.messages[2]["content"] == "Can you explain neural networks?"
     
     def test_chat_file_naming_and_renaming(self):
-        """Test chat file naming and automatic renaming"""
+        """Test chat file naming and automatic renaming with cleanup"""
         chat = ChatHistory()
         
         # Initial filename should be timestamp-based
         initial_filename = chat.filename
+        initial_filepath = os.path.join("chat_history", initial_filename)
         assert initial_filename.endswith('.txt')
         
-        # Add messages to trigger title generation
+        # Add first message - this should create the initial file
         chat.add_message("user", "Tell me about Python programming")
+        assert os.path.exists(initial_filepath)
+        
+        # Add assistant response - this should trigger title generation and cleanup
         chat.add_message("assistant", "Python is a versatile language.")
         
         # Filename should now be content-based
-        assert chat.filename != initial_filename
-        assert "python-programming" in chat.filename.lower()
+        final_filename = chat.filename
+        final_filepath = os.path.join("chat_history", final_filename)
+        assert final_filename != initial_filename
+        assert "python-programming" in final_filename.lower()
         
-        # File should exist in chat_history
-        assert os.path.exists(os.path.join("chat_history", chat.filename))
+        # New file should exist and old file should be cleaned up
+        assert os.path.exists(final_filepath)
+        assert not os.path.exists(initial_filepath), f"Old file {initial_filename} should be cleaned up"
 
 
 if __name__ == "__main__":
