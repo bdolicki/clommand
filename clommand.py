@@ -487,26 +487,89 @@ class ClaudeREPL:
         
         return response_text
     
+    def _emulate_system_prompt_for_o1(self, system_prompt: str, messages: list) -> list:
+        """Emulate system prompt for o1 models by prepending to first user message"""
+        if not messages:
+            return messages
+        
+        # Create a copy to avoid modifying the original chat history
+        openai_messages = []
+        system_prompt_added = False
+        
+        for i, msg in enumerate(messages):
+            if msg["role"] == "user" and not system_prompt_added:
+                # Check if system prompt is already embedded in this message
+                # (to handle model switching scenarios)
+                content = msg["content"]
+                if not content.startswith(system_prompt):
+                    # Prepend system prompt to first user message
+                    modified_content = f"{system_prompt}\n\n{content}"
+                    openai_messages.append({
+                        "role": "user",
+                        "content": modified_content
+                    })
+                else:
+                    # System prompt already embedded, use as-is
+                    openai_messages.append(msg.copy())
+                system_prompt_added = True
+            else:
+                # Copy other messages as-is
+                openai_messages.append(msg.copy())
+        
+        return openai_messages
+    
+    def _clean_embedded_system_prompt(self, system_prompt: str, messages: list) -> list:
+        """Remove embedded system prompt from first user message for regular models"""
+        if not messages:
+            return messages
+            
+        cleaned_messages = []
+        for i, msg in enumerate(messages):
+            if i == 0 and msg["role"] == "user":
+                content = msg["content"]
+                # Check if the message starts with the system prompt
+                if content.startswith(system_prompt):
+                    # Remove the system prompt and leading whitespace
+                    cleaned_content = content[len(system_prompt):].lstrip('\n ')
+                    if cleaned_content:  # Make sure there's still content left
+                        cleaned_messages.append({
+                            "role": "user", 
+                            "content": cleaned_content
+                        })
+                    # If no content left after removing system prompt, skip this message
+                else:
+                    # No embedded system prompt, use as-is
+                    cleaned_messages.append(msg.copy())
+            else:
+                cleaned_messages.append(msg.copy())
+                
+        return cleaned_messages
+    
     def _call_openai_api(self, client, model: str, system_prompt: str, messages: list) -> str:
         """Call OpenAI API with proper formatting"""
         # o1 models don't support system messages
         if model.startswith('o1') or model.startswith('o3') or model.startswith('o4'):
-            openai_messages = messages
+            # Emulate system prompt by prepending to first user message
+            openai_messages = self._emulate_system_prompt_for_o1(system_prompt, messages)
         else:
+            # Clean any embedded system prompts from messages for regular models
+            cleaned_messages = self._clean_embedded_system_prompt(system_prompt, messages)
             # Convert messages format for OpenAI (system message goes in messages array)
-            openai_messages = [{"role": "system", "content": system_prompt}] + messages
+            openai_messages = [{"role": "system", "content": system_prompt}] + cleaned_messages
         
-        # o1 models use different parameter name for max tokens
+        # o1 models use different parameter name for max tokens and need more tokens for reasoning
         if model.startswith('o1') or model.startswith('o3') or model.startswith('o4'):
             token_param = "max_completion_tokens"
+            max_tokens = 4096  # o1 models need more tokens for reasoning + response
         else:
             token_param = "max_tokens"
+            max_tokens = 1024  # Regular models
         
         # Log full API request payload at trace level
         if self.logger.isEnabledFor(5):  # TRACE level
             request_payload = {
                 "model": model,
-                token_param: 1024,
+                token_param: max_tokens,
                 "messages": openai_messages
             }
             self.logger.trace(f"OpenAI API request payload:\n{json.dumps(request_payload, indent=2, ensure_ascii=False)}")
@@ -514,13 +577,32 @@ class ClaudeREPL:
         # Create request parameters dynamically
         request_params = {
             "model": model,
-            token_param: 1024,
+            token_param: max_tokens,
             "messages": openai_messages
         }
         
         response = client.chat.completions.create(**request_params)
         
         response_text = response.choices[0].message.content
+        
+        # Detect token exhaustion in o1 models (empty response with high token usage)
+        if model.startswith('o1') or model.startswith('o3') or model.startswith('o4'):
+            if not response_text or response_text.strip() == "":
+                usage = response.usage
+                if usage and hasattr(usage, 'completion_tokens_details'):
+                    reasoning_tokens = getattr(usage.completion_tokens_details, 'reasoning_tokens', 0)
+                    total_completion = usage.completion_tokens
+                    
+                    if reasoning_tokens > 0 and total_completion >= max_tokens * 0.9:  # Used 90%+ of token limit
+                        error_msg = f"Error: {model} exhausted its token limit during reasoning. "
+                        error_msg += f"Used {total_completion}/{max_tokens} tokens ({reasoning_tokens} for reasoning). "
+                        error_msg += "Try asking a simpler question or breaking your request into smaller parts."
+                        self.logger.warning(f"Token exhaustion detected: {usage.completion_tokens}/{max_tokens} tokens used")
+                        return error_msg
+                
+                # Generic empty response error if we can't determine the cause
+                return f"Error: {model} returned an empty response. This may indicate a token limit issue or other API problem."
+        
         self.logger.debug(f"Received OpenAI response: {response_text[:50]}...")
         
         # Log full API response at trace level
