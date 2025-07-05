@@ -424,8 +424,30 @@ class ClaudeREPL:
             return error_msg
     
     def _format_response(self, text: str) -> str:
-        """Format response text to wrap at 75 characters with word boundaries"""
-        return textwrap.fill(text, width=75, break_long_words=False, break_on_hyphens=False)
+        """Format response text to wrap at 75 characters while preserving existing newlines"""
+        # Split text into paragraphs (separated by double newlines)
+        paragraphs = text.split('\n\n')
+        formatted_paragraphs = []
+        
+        for paragraph in paragraphs:
+            # Split paragraph into lines (single newlines)
+            lines = paragraph.split('\n')
+            formatted_lines = []
+            
+            for line in lines:
+                # Only wrap lines that are longer than 75 characters
+                if len(line) <= 75:
+                    formatted_lines.append(line)
+                else:
+                    # Wrap long lines while preserving word boundaries
+                    wrapped_lines = textwrap.wrap(line, width=75, break_long_words=False, break_on_hyphens=False)
+                    formatted_lines.extend(wrapped_lines)
+            
+            # Rejoin lines with single newlines
+            formatted_paragraphs.append('\n'.join(formatted_lines))
+        
+        # Rejoin paragraphs with double newlines
+        return '\n\n'.join(formatted_paragraphs)
     
     def _handle_command(self, command: str) -> bool:
         command = command.strip().lower()
