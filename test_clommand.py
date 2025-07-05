@@ -131,12 +131,14 @@ class TestClaudeREPL:
         shutil.rmtree(self.temp_dir)
     
     @patch.dict(os.environ, {}, clear=True)
-    def test_init_without_api_key(self):
+    @patch("clommand.load_dotenv")
+    def test_init_without_api_key(self, mock_load_dotenv):
         """Test initialization without API key"""
+        mock_load_dotenv.return_value = None
         repl = ClaudeREPL()
         assert repl.client is None
         assert repl.running is True
-        assert len(repl.commands) == 6
+        assert len(repl.commands) == 7
     
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test_key"})
     @patch("clommand.anthropic.Anthropic")
@@ -291,6 +293,17 @@ class TestClaudeREPL:
         assert "/save" in captured.out
         assert "/quit" in captured.out
     
+    def test_handle_command_system(self, mocker):
+        """Test /system command"""
+        repl = ClaudeREPL()
+        
+        # Mock the editor opening
+        mock_open_editor = mocker.patch.object(repl, '_open_system_prompt_in_editor')
+        
+        result = repl._handle_command("/system")
+        assert result is True
+        mock_open_editor.assert_called_once()
+    
     def test_handle_command_unknown(self, capsys):
         """Test unknown command"""
         repl = ClaudeREPL()
@@ -318,8 +331,11 @@ class TestClaudeREPL:
         assert response == "Test response"
         mock_client.messages.create.assert_called_once()
     
-    def test_get_claude_response_no_client(self):
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("clommand.load_dotenv")
+    def test_get_claude_response_no_client(self, mock_load_dotenv):
         """Test Claude response without client"""
+        mock_load_dotenv.return_value = None
         repl = ClaudeREPL()
         response = repl._get_claude_response("Test input")
         assert "Error: Claude client not initialized" in response
@@ -337,6 +353,62 @@ class TestClaudeREPL:
         
         assert "Error getting Claude response" in response
         assert "API Error" in response
+
+
+    def test_system_prompt_functionality(self):
+        """Test system prompt file management"""
+        repl = ClaudeREPL()
+        
+        # Test that system prompt file is created
+        assert os.path.exists(repl.system_prompt_file)
+        
+        # Test reading system prompt
+        prompt = repl._get_system_prompt()
+        assert "Claude" in prompt
+        assert "Anthropic" in prompt
+        
+        # Test writing custom system prompt
+        custom_prompt = "You are a helpful coding assistant."
+        with open(repl.system_prompt_file, 'w') as f:
+            f.write(custom_prompt)
+        
+        # Test reading custom prompt
+        read_prompt = repl._get_system_prompt()
+        assert read_prompt == custom_prompt
+    
+    def test_is_command_available(self):
+        """Test command availability check"""
+        repl = ClaudeREPL()
+        
+        # Test with a command that should exist
+        assert repl._is_command_available('python') or repl._is_command_available('python3')
+        
+        # Test with a command that shouldn't exist
+        assert not repl._is_command_available('nonexistent_command_12345')
+    
+    def test_system_prompt_integration_with_api(self, mocker):
+        """Test that system prompt is included in API calls"""
+        repl = ClaudeREPL()
+        
+        # Create custom system prompt
+        custom_prompt = "You are a test assistant."
+        with open(repl.system_prompt_file, 'w') as f:
+            f.write(custom_prompt)
+        
+        # Mock the API client
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.content = [Mock(text="Test response")]
+        mock_client.messages.create.return_value = mock_response
+        repl.client = mock_client
+        
+        # Make a request
+        response = repl._get_claude_response("Test input")
+        
+        # Verify system prompt was included
+        mock_client.messages.create.assert_called_once()
+        call_args = mock_client.messages.create.call_args
+        assert call_args[1]['system'] == custom_prompt
 
 
 class TestIntegration:

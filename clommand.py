@@ -6,6 +6,8 @@ import json
 import re
 import hashlib
 import readline
+import subprocess
+import tempfile
 from datetime import datetime
 from typing import List, Dict, Optional
 import anthropic
@@ -111,9 +113,11 @@ class ClaudeREPL:
         self.client = None
         self.current_chat = ChatHistory()
         self.running = True
-        self.commands = ['/save', '/new', '/list', '/resume', '/quit', '/help']
+        self.commands = ['/save', '/new', '/list', '/resume', '/quit', '/help', '/system']
+        self.system_prompt_file = "system_prompt.txt"
         self._setup_client()
         self._setup_readline()
+        self._ensure_system_prompt_exists()
     
     def _get_prompt(self) -> str:
         if self.current_chat.title:
@@ -156,6 +160,75 @@ class ClaudeREPL:
         
         return []
     
+    def _ensure_system_prompt_exists(self):
+        """Create default system prompt file if it doesn't exist"""
+        if not os.path.exists(self.system_prompt_file):
+            default_prompt = "You are Claude, an AI assistant created by Anthropic. You are helpful, harmless, and honest."
+            with open(self.system_prompt_file, 'w') as f:
+                f.write(default_prompt)
+    
+    def _get_system_prompt(self) -> str:
+        """Read the system prompt from file"""
+        try:
+            with open(self.system_prompt_file, 'r') as f:
+                return f.read().strip()
+        except FileNotFoundError:
+            return "You are Claude, an AI assistant created by Anthropic."
+    
+    def _open_system_prompt_in_editor(self):
+        """Open system prompt file in editor with proper terminal handling"""
+        try:
+            # Try common editors in order of preference
+            editors = [
+                os.environ.get('EDITOR'),
+                'vim',
+                'nano',
+                'vi',
+                'code'
+            ]
+            
+            for editor in editors:
+                if editor and self._is_command_available(editor):
+                    # For vim users: execute in a way that preserves terminal state
+                    if editor in ['vim', 'vi', 'nano']:
+                        # Create a subprocess that inherits the terminal properly
+                        process = subprocess.Popen([editor, self.system_prompt_file])
+                        process.wait()  # Wait for editor to close
+                        
+                        # Reset terminal state quietly without clearing screen
+                        os.system('stty sane')
+                        
+                        # Re-setup readline without fanfare
+                        readline.clear_history()
+                        self._setup_readline()
+                        
+                        print(f"System prompt updated using {editor}")
+                    else:
+                        # For GUI editors, just run normally
+                        subprocess.run([editor, self.system_prompt_file])
+                        print(f"System prompt opened in {editor}")
+                    
+                    return
+            
+            print("No suitable editor found. Please set the EDITOR environment variable.")
+            print(f"You can manually edit: {self.system_prompt_file}")
+            
+        except Exception as e:
+            print(f"Error opening editor: {e}")
+            print(f"You can manually edit: {self.system_prompt_file}")
+    
+    def _is_command_available(self, command: str) -> bool:
+        """Check if a command is available in the system PATH"""
+        try:
+            with open(os.devnull, 'w') as devnull:
+                subprocess.run([command, '--version'], 
+                             stdout=devnull, 
+                             stderr=devnull, 
+                             timeout=2)
+            return True
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+            return False
+    
     def _setup_client(self):
         api_key = os.environ.get('ANTHROPIC_API_KEY')
         if not api_key:
@@ -177,9 +250,12 @@ class ClaudeREPL:
                        for msg in self.current_chat.messages]
             messages.append({"role": "user", "content": user_input})
             
+            system_prompt = self._get_system_prompt()
+            
             response = self.client.messages.create(
                 model="claude-3-5-sonnet-20241022",
                 max_tokens=1024,
+                system=system_prompt,
                 messages=messages
             )
             
@@ -252,12 +328,17 @@ class ClaudeREPL:
                 print(f"Chat file not found: {filename}")
             return True
         
+        elif command == '/system':
+            self._open_system_prompt_in_editor()
+            return True
+        
         elif command == '/help':
             print("Available commands:")
             print("  /save     - Save current chat history")
             print("  /new      - Start a new chat session")
             print("  /list     - List available chat histories")
             print("  /resume <filename> - Resume a previous chat")
+            print("  /system   - Edit system prompt")
             print("  /quit     - Exit the REPL")
             print("  /help     - Show this help message")
             return True
@@ -283,6 +364,7 @@ class ClaudeREPL:
                         print("  /new      - Start a new chat session")
                         print("  /list     - List available chat histories")
                         print("  /resume <filename> - Resume a previous chat")
+                        print("  /system   - Edit system prompt")
                         print("  /quit     - Exit the REPL")
                         print("  /help     - Show this help message")
                     else:
