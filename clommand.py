@@ -132,6 +132,7 @@ class ClaudeREPL:
         
         # Logging configuration
         self.log_levels = {
+            'trace': 5,  # Custom level below DEBUG for full API tracing
             'debug': logging.DEBUG,
             'info': logging.INFO,
             'warning': logging.WARNING,
@@ -210,9 +211,18 @@ class ClaudeREPL:
         # Create logs directory
         os.makedirs("logs", exist_ok=True)
         
+        # Add custom TRACE level
+        logging.addLevelName(5, 'TRACE')
+        
         # Create logger
         self.logger = logging.getLogger('clommand')
         self.logger.setLevel(self.log_levels[self.current_log_level])
+        
+        # Add trace method to logger
+        def trace(message, *args, **kwargs):
+            if self.logger.isEnabledFor(5):
+                self.logger._log(5, message, args, **kwargs)
+        self.logger.trace = trace
         
         # Remove any existing handlers
         for handler in self.logger.handlers[:]:
@@ -333,6 +343,16 @@ class ClaudeREPL:
             
             self.logger.info(f"Making API request to {model} with {len(messages)} messages")
             
+            # Log full API request payload at trace level
+            if self.logger.isEnabledFor(5):  # TRACE level
+                request_payload = {
+                    "model": model,
+                    "max_tokens": 1024,
+                    "system": system_prompt,
+                    "messages": messages
+                }
+                self.logger.trace(f"Full API request payload:\n{json.dumps(request_payload, indent=2, ensure_ascii=False)}")
+            
             response = self.client.messages.create(
                 model=model,
                 max_tokens=1024,
@@ -342,6 +362,16 @@ class ClaudeREPL:
             
             response_text = response.content[0].text
             self.logger.debug(f"Received response: {response_text[:50]}...")
+            
+            # Log full API response at trace level
+            if self.logger.isEnabledFor(5):  # TRACE level
+                response_data = {
+                    "content": response.content[0].text,
+                    "model": response.model,
+                    "usage": response.usage.dict() if hasattr(response, 'usage') and response.usage else None,
+                    "id": response.id if hasattr(response, 'id') else None
+                }
+                self.logger.trace(f"Full API response:\n{json.dumps(response_data, indent=2, ensure_ascii=False)}")
             
             return response_text
         except Exception as e:
@@ -471,7 +501,7 @@ class ClaudeREPL:
             print("  /model    - Show current model")
             print("  /model <name> - Switch model (haiku, sonnet, opus)")
             print("  /log      - Show current log level")
-            print("  /log <level> - Set log level (debug, info, warning, error)")
+            print("  /log <level> - Set log level (trace, debug, info, warning, error)")
             print("  /quit     - Exit the REPL")
             print("  /help     - Show this help message")
             return True
@@ -501,7 +531,7 @@ class ClaudeREPL:
                         print("  /model    - Show current model")
                         print("  /model <name> - Switch model (haiku, sonnet, opus)")
                         print("  /log      - Show current log level")
-                        print("  /log <level> - Set log level (debug, info, warning, error)")
+                        print("  /log <level> - Set log level (trace, debug, info, warning, error)")
                         print("  /quit     - Exit the REPL")
                         print("  /help     - Show this help message")
                     else:

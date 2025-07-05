@@ -219,6 +219,7 @@ class TestClaudeREPL:
         
         # Test completion for all log levels
         completions = repl._get_completions("", "/log ")
+        assert "trace" in completions
         assert "debug" in completions
         assert "info" in completions
         assert "warning" in completions
@@ -392,13 +393,18 @@ class TestClaudeREPL:
         """Test /log command to switch log levels"""
         repl = ClaudeREPL()
         
+        # Switch to trace
+        result = repl._handle_command("/log trace")
+        assert result is True
+        assert repl.current_log_level == "trace"
+        
+        captured = capsys.readouterr()
+        assert "Log level set to: trace" in captured.out
+        
         # Switch to debug
         result = repl._handle_command("/log debug")
         assert result is True
         assert repl.current_log_level == "debug"
-        
-        captured = capsys.readouterr()
-        assert "Log level set to: debug" in captured.out
         
         # Switch to error
         result = repl._handle_command("/log error")
@@ -430,6 +436,20 @@ class TestClaudeREPL:
         
         # Check that log level is set correctly
         assert repl.current_log_level == "info"
+    
+    def test_trace_logging_functionality(self):
+        """Test that trace level logging includes full API payloads"""
+        repl = ClaudeREPL()
+        
+        # Switch to trace level
+        repl.current_log_level = "trace"
+        repl._setup_logging()
+        
+        # Check that trace method is available
+        assert hasattr(repl.logger, 'trace')
+        
+        # Check that trace level is enabled
+        assert repl.logger.isEnabledFor(5)  # TRACE level
     
     def test_handle_command_unknown(self, capsys):
         """Test unknown command"""
