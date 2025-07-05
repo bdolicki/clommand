@@ -1,6 +1,6 @@
-# Claude REPL Chatbot
+# Claude Command-Line Chatbot
 
-A command-line REPL chatbot that integrates with Claude AI and OpenAI models, automatically managing chat history.
+A command-line chatbot that integrates with Claude AI and OpenAI models, automatically managing chat history.
 
 ## Features
 
@@ -47,7 +47,7 @@ python clommand.py
 - `/model <name>` - Switch between available models
 - `/system` - Edit system prompt
 - `/log <level>` - Set logging level (trace, debug, info, warning, error)
-- `/quit` - Exit the REPL
+- `/quit` - Exit the chatbot
 - `/help` - Show help message
 
 ## Available Models

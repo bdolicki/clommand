@@ -114,7 +114,7 @@ class ChatHistory:
             return []
         return [f for f in os.listdir("chat_history") if f.endswith('.txt')]
 
-class ClaudeREPL:
+class ClaudeChatbot:
     def __init__(self):
         # Load environment variables from .env file
         load_dotenv()
@@ -776,7 +776,7 @@ class ClaudeREPL:
             print(f"  /model <name> - Switch model ({', '.join(self.model_options.keys())})")
             print("  /log      - Show current log level")
             print("  /log <level> - Set log level (trace, debug, info, warning, error)")
-            print("  /quit     - Exit the REPL")
+            print("  /quit     - Exit the chatbot")
             print("  /help     - Show this help message")
             return True
         
@@ -786,7 +786,7 @@ class ClaudeREPL:
             return True
     
     def run(self):
-        print("Claude REPL - Command Line Chatbot")
+        print("Claude Command-Line Chatbot")
         print("Type /help for commands, or start chatting!")
         print("=" * 50)
         
@@ -810,7 +810,7 @@ class ClaudeREPL:
                         print(f"  /model <name> - Switch model ({', '.join(self.model_options.keys())})")
                         print("  /log      - Show current log level")
                         print("  /log <level> - Set log level (trace, debug, info, warning, error)")
-                        print("  /quit     - Exit the REPL")
+                        print("  /quit     - Exit the chatbot")
                         print("  /help     - Show this help message")
                     else:
                         self._handle_command(user_input.strip())
@@ -847,5 +847,5 @@ class ClaudeREPL:
                 print(f"Error: {e}")
 
 if __name__ == "__main__":
-    repl = ClaudeREPL()
-    repl.run()
+    chatbot = ClaudeChatbot()
+    chatbot.run()
