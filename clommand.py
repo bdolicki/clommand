@@ -9,6 +9,7 @@ import readline
 from datetime import datetime
 from typing import List, Dict, Optional
 import anthropic
+from dotenv import load_dotenv
 
 class ChatHistory:
     def __init__(self, chat_id: str = None):
@@ -104,6 +105,9 @@ class ChatHistory:
 
 class ClaudeREPL:
     def __init__(self):
+        # Load environment variables from .env file
+        load_dotenv()
+        
         self.client = None
         self.current_chat = ChatHistory()
         self.running = True
