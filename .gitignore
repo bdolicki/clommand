@@ -32,3 +32,6 @@ logs/
 
 # Configuration
 clommand_config.json
+
+# Virtual environment
+.venv/
