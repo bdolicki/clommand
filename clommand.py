@@ -667,9 +667,22 @@ class ClaudeChatbot:
         elif command == '/list':
             chats = ChatHistory.list_available_chats()
             if chats:
-                print("Available chat histories:")
+                # Get file paths with modification times
+                chat_files = []
                 for chat in chats:
-                    print(f"  - {chat}")
+                    filepath = os.path.join("chat_history", chat)
+                    if os.path.exists(filepath):
+                        mtime = os.path.getmtime(filepath)
+                        chat_files.append((chat, mtime))
+                
+                # Sort by modification time (newest first)
+                chat_files.sort(key=lambda x: x[1], reverse=True)
+                
+                print("Available chat histories:")
+                for chat, mtime in chat_files:
+                    # Format timestamp as 2025-07-12 15:33
+                    formatted_time = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+                    print(f"  - {formatted_time} {chat}")
             else:
                 print("No saved chat histories found.")
             return True
@@ -785,6 +798,95 @@ class ClaudeChatbot:
             print("Type /help for available commands.")
             return True
     
+    def _get_input_with_paste_detection(self, prompt: str) -> str:
+        """Get user input with bracket paste mode detection."""
+        import sys
+        import tty
+        import termios
+        import select
+        
+        # Check if stdin is a terminal
+        if not sys.stdin.isatty():
+            return input(prompt)
+        
+        print(prompt, end='', flush=True)
+        
+        # Save terminal settings
+        old_settings = termios.tcgetattr(sys.stdin)
+        
+        try:
+            # Set terminal to raw mode for character-by-character input
+            tty.setraw(sys.stdin.fileno())
+            
+            input_buffer = []
+            in_paste_mode = False
+            
+            while True:
+                # Check if data is available
+                if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
+                    char = sys.stdin.read(1)
+                    
+                    # Check for bracket paste start sequence (\033[200~)
+                    if len(input_buffer) >= 5 and input_buffer[-5:] == ['\033', '[', '2', '0', '0'] and char == '~':
+                        in_paste_mode = True
+                        input_buffer = input_buffer[:-5]  # Remove the escape sequence
+                        continue
+                    
+                    # Check for bracket paste end sequence (\033[201~)
+                    if in_paste_mode and len(input_buffer) >= 5 and input_buffer[-5:] == ['\033', '[', '2', '0', '1'] and char == '~':
+                        in_paste_mode = False
+                        input_buffer = input_buffer[:-5]  # Remove the escape sequence
+                        continue
+                    
+                    # Handle Enter key
+                    if char == '\r' or char == '\n':
+                        if not in_paste_mode:
+                            # Normal Enter - submit input
+                            print()  # Move to next line
+                            break
+                        else:
+                            # Pasted newline - add literal newline
+                            input_buffer.append(char)
+                            print(char, end='', flush=True)
+                    
+                    # Handle backspace
+                    elif char == '\x7f' or char == '\x08':
+                        if input_buffer:
+                            input_buffer.pop()
+                            print('\b \b', end='', flush=True)
+                    
+                    # Handle Ctrl+C
+                    elif char == '\x03':
+                        raise KeyboardInterrupt
+                    
+                    # Handle Ctrl+D
+                    elif char == '\x04':
+                        if not input_buffer:
+                            raise EOFError
+                    
+                    # Regular character
+                    else:
+                        input_buffer.append(char)
+                        if char == '\n' and in_paste_mode:
+                            print('\n', end='', flush=True)
+                        else:
+                            print(char, end='', flush=True)
+                
+                else:
+                    # No input available, sleep briefly
+                    import time
+                    time.sleep(0.01)
+            
+            return ''.join(input_buffer)
+            
+        except (termios.error, tty.error):
+            # Fallback to regular input if terminal manipulation fails
+            return input(prompt)
+            
+        finally:
+            # Restore terminal settings
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+
     def run(self):
         print("Claude Command-Line Chatbot")
         print("Type /help for commands, or start chatting!")
@@ -796,7 +898,7 @@ class ClaudeChatbot:
         
         while self.running:
             try:
-                user_input = input(f"\n{self._get_prompt()}")
+                user_input = self._get_input_with_paste_detection(f"\n{self._get_prompt()}")
                 
                 if user_input.startswith('/'):
                     if user_input.strip() == '/':
