@@ -21,16 +21,11 @@ pip install -r requirements.txt
 
 2. Set your API keys:
 ```bash
-# Option 1: Create a .env file (recommended)
-cp .env.example .env
-# Edit .env and add your API keys
-
-# Option 2: Set environment variables
 export ANTHROPIC_API_KEY="your_anthropic_api_key_here"
 export OPENAI_API_KEY="your_openai_api_key_here"
 ```
 
-**Note**: You need at least one API key to use the chatbot. Both providers are optional, but having both gives you access to all available models.
+**Note**: You need at least one API key to use the chatbot. Both providers are optional, but having both gives you access to all available models. You can put them in an `.env` file.
 
 3. Run the chatbot:
 ```bash
