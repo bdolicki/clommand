@@ -1,16 +1,35 @@
 # Claude Command-Line Chatbot
 
-A command-line chatbot that integrates with Claude AI and OpenAI models, automatically managing chat history.
+A command-line chatbot that lets you switch between Anthropic and OpenAI models mid-conversation.
+
+## Example Usage
+```
+% ./clommand.py
+Claude Command-Line Chatbot
+Type /help for commands, or start chatting!
+==================================================
+Configuration:
+  Model: haiku (claude-3-5-haiku-20241022) [Anthropic]
+  Log Level: trace
+  System Prompt: brief2
+  Available Providers: Anthropic, OpenAI
+==================================================
+untitled-chat> Why is life, the Universe, and everything?
+Anthropic haiku: 42. (A reference to Douglas Adams' humorous science fiction)
+why-life-the-universe-and> /model o4-mini
+why-life-the-universe-and> Try again
+OpenAI o4-mini: 42
+why-life-the-universe-and>
+```
 
 ## Features
 
 - Interactive command-line interface
-- Support for both Anthropic (Claude) and OpenAI models
-- Multiple model options including GPT-4 variants and reasoning models (o1, o1-pro)
-- Automatic chat history persistence
-- Smart conversation naming based on content
-- Resume previous conversations
-- Built-in commands for chat management
+- Support for Anthropic (Claude) and OpenAI models
+- Automatic chat history persistence in individual text files named based on content
+- Resume previous conversations with `/resume`
+- Switch models with `/model` mid-conversation while keeping the context
+- Change system prompt anytime by typing `/system`
 
 ## Setup
 
