@@ -14,12 +14,12 @@ Configuration:
   System Prompt: brief2
   Available Providers: Anthropic, OpenAI
 ==================================================
-untitled-chat> Why is life, the Universe, and everything?
-Anthropic haiku: 42. (A reference to Douglas Adams' humorous science fiction)
-why-life-the-universe-and> /model o4-mini
-why-life-the-universe-and> Try again
-OpenAI o4-mini: 42
-why-life-the-universe-and>
+untitled-chat::haiku> Why is life, the Universe, and everything?
+42. (A reference to Douglas Adams' humorous science fiction)
+why-life-the-universe-and::haiku> /model o4-mini
+why-life-the-universe-and::o4-mini> Try again
+42
+why-life-the-universe-and::o4-mini>
 ```
 
 ## Features
