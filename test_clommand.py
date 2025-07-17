@@ -348,8 +348,16 @@ class TestClaudeChatbot:
         assert "Current model: haiku" in captured.out
         assert "claude-3-5-haiku-20241022" in captured.out
     
-    def test_handle_command_model_switch(self, capsys):
+    @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test_key", "OPENAI_API_KEY": "test_openai_key"})
+    @patch("clommand.anthropic.Anthropic")
+    @patch("clommand.openai.OpenAI")
+    def test_handle_command_model_switch(self, mock_openai, mock_anthropic, capsys):
         """Test /model command to switch models"""
+        mock_anthropic_client = Mock()
+        mock_openai_client = Mock()
+        mock_anthropic.return_value = mock_anthropic_client
+        mock_openai.return_value = mock_openai_client
+        
         chatbot = ClaudeChatbot()
         
         # Switch to sonnet
@@ -970,6 +978,46 @@ class TestProviderValidation:
         captured = capsys.readouterr()
         assert "Error: Anthropic API key not configured" in captured.out
         assert "ANTHROPIC_API_KEY" in captured.out
+    
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("clommand.load_dotenv")
+    def test_model_switch_validation_no_api_keys(self, mock_load_dotenv, capsys):
+        """Test model switching validation when neither API key is available"""
+        mock_load_dotenv.return_value = None
+        
+        chatbot = ClaudeChatbot()
+        # Verify no clients are available
+        assert chatbot.anthropic_client is None
+        assert chatbot.openai_client is None
+        
+        original_model = chatbot.current_model
+        
+        # Should fail for Anthropic models
+        result = chatbot._handle_command("/model sonnet")
+        assert result is True
+        assert chatbot.current_model == original_model  # Should remain unchanged
+        
+        captured = capsys.readouterr()
+        assert "Error: Anthropic API key not configured" in captured.out
+        assert "ANTHROPIC_API_KEY" in captured.out
+        
+        # Should fail for OpenAI models
+        result = chatbot._handle_command("/model gpt4")
+        assert result is True
+        assert chatbot.current_model == original_model  # Should remain unchanged
+        
+        captured = capsys.readouterr()
+        assert "Error: Openai API key not configured" in captured.out
+        assert "OPENAI_API_KEY" in captured.out
+        
+        # Should fail for o1 models
+        result = chatbot._handle_command("/model o1-mini")
+        assert result is True
+        assert chatbot.current_model == original_model  # Should remain unchanged
+        
+        captured = capsys.readouterr()
+        assert "Error: Openai API key not configured" in captured.out
+        assert "OPENAI_API_KEY" in captured.out
 
 
 class TestModelSwitching:
