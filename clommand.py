@@ -164,9 +164,9 @@ class ClaudeChatbot:
     
     def _get_prompt(self) -> str:
         if self.current_chat.title:
-            return f"{self.current_chat.title}> "
+            return f"{self.current_chat.title}::{self.current_model}> "
         else:
-            return "untitled-chat> "
+            return f"untitled-chat::{self.current_model}> "
     
     def _setup_readline(self):
         readline.set_completer(self._completer)
@@ -925,7 +925,6 @@ class ClaudeChatbot:
                 # Add user message to history first (needed for API context)
                 self.current_chat.add_message("user", user_input)
                 
-                print(f"\n{self._get_model_provider(self.current_model).title()} AI:")
                 response = self._get_ai_response(user_input)
                 
                 # Check if response is an error (starts with "Error:")

@@ -155,14 +155,22 @@ class TestClaudeChatbot:
         """Test prompt generation for untitled chat"""
         chatbot = ClaudeChatbot()
         prompt = chatbot._get_prompt()
-        assert prompt == "untitled-chat> "
+        assert prompt == "untitled-chat::haiku> "
     
     def test_get_prompt_titled(self):
         """Test prompt generation for titled chat"""
         chatbot = ClaudeChatbot()
         chatbot.current_chat.title = "test-chat"
         prompt = chatbot._get_prompt()
-        assert prompt == "test-chat> "
+        assert prompt == "test-chat::haiku> "
+    
+    def test_get_prompt_with_different_model(self):
+        """Test prompt generation with different model"""
+        chatbot = ClaudeChatbot()
+        chatbot.current_model = "o4-mini"
+        chatbot.current_chat.title = "test-chat"
+        prompt = chatbot._get_prompt()
+        assert prompt == "test-chat::o4-mini> "
     
     def test_get_completions_commands(self):
         """Test command completion"""
