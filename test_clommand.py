@@ -1248,5 +1248,215 @@ class TestIntegration:
         assert not os.path.exists(initial_filepath), f"Old file {initial_filename} should be cleaned up"
 
 
+class TestPromptFormatChanges:
+    """Test the specific prompt format changes made in the PR"""
+    
+    def setup_method(self):
+        """Setup for prompt format tests"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.original_cwd = os.getcwd()
+        os.chdir(self.temp_dir)
+    
+    def teardown_method(self):
+        """Cleanup after prompt format tests"""
+        os.chdir(self.original_cwd)
+        shutil.rmtree(self.temp_dir)
+    
+    def test_prompt_format_includes_model_name_untitled(self):
+        """Test that prompt format includes model name for untitled chat"""
+        chatbot = ClaudeChatbot()
+        
+        # Test default model (haiku)
+        prompt = chatbot._get_prompt()
+        assert prompt == "untitled-chat::haiku> "
+        assert "::" in prompt
+        assert "haiku" in prompt
+        
+        # Test different models
+        chatbot.current_model = "sonnet"
+        prompt = chatbot._get_prompt()
+        assert prompt == "untitled-chat::sonnet> "
+        
+        chatbot.current_model = "o4-mini"
+        prompt = chatbot._get_prompt()
+        assert prompt == "untitled-chat::o4-mini> "
+    
+    def test_prompt_format_includes_model_name_titled(self):
+        """Test that prompt format includes model name for titled chat"""
+        chatbot = ClaudeChatbot()
+        chatbot.current_chat.title = "my-test-chat"
+        
+        # Test default model (haiku)
+        prompt = chatbot._get_prompt()
+        assert prompt == "my-test-chat::haiku> "
+        assert "::" in prompt
+        assert "haiku" in prompt
+        
+        # Test different models
+        chatbot.current_model = "gpt4"
+        prompt = chatbot._get_prompt()
+        assert prompt == "my-test-chat::gpt4> "
+        
+        chatbot.current_model = "o1-mini"
+        prompt = chatbot._get_prompt()
+        assert prompt == "my-test-chat::o1-mini> "
+    
+    def test_prompt_format_consistency_across_models(self):
+        """Test that prompt format is consistent across all available models"""
+        chatbot = ClaudeChatbot()
+        chatbot.current_chat.title = "test-chat"
+        
+        # Test all available models
+        for model_name in chatbot.model_options.keys():
+            chatbot.current_model = model_name
+            prompt = chatbot._get_prompt()
+            
+            # Should follow the pattern: title::model> 
+            expected = f"test-chat::{model_name}> "
+            assert prompt == expected, f"Model {model_name} produced wrong prompt: {prompt}"
+            
+            # Should contain the double colon separator
+            assert "::" in prompt, f"Model {model_name} missing :: separator in prompt: {prompt}"
+            
+            # Should end with "> "
+            assert prompt.endswith("> "), f"Model {model_name} prompt doesn't end correctly: {prompt}"
+    
+    def test_prompt_format_model_switch_updates_immediately(self):
+        """Test that prompt format updates immediately when model is switched"""
+        chatbot = ClaudeChatbot()
+        chatbot.current_chat.title = "switch-test"
+        
+        # Start with default model
+        initial_prompt = chatbot._get_prompt()
+        assert "haiku" in initial_prompt
+        
+        # Switch model and verify prompt updates
+        chatbot.current_model = "opus"
+        updated_prompt = chatbot._get_prompt()
+        assert "opus" in updated_prompt
+        assert "haiku" not in updated_prompt
+        assert updated_prompt == "switch-test::opus> "
+        
+        # Switch to OpenAI model
+        chatbot.current_model = "gpt4"
+        gpt_prompt = chatbot._get_prompt()
+        assert "gpt4" in gpt_prompt
+        assert "opus" not in gpt_prompt
+        assert gpt_prompt == "switch-test::gpt4> "
+
+
+class TestProviderPrefixRemoval:
+    """Test that AI provider prefix has been removed from responses"""
+    
+    def setup_method(self):
+        """Setup for provider prefix tests"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.original_cwd = os.getcwd()
+        os.chdir(self.temp_dir)
+    
+    def teardown_method(self):
+        """Cleanup after provider prefix tests"""
+        os.chdir(self.original_cwd)
+        shutil.rmtree(self.temp_dir)
+    
+    @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test_key"})
+    @patch("clommand.anthropic.Anthropic")
+    def test_anthropic_response_no_provider_prefix(self, mock_anthropic, capsys):
+        """Test that Anthropic responses don't include provider prefix"""
+        # Mock the API response
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.content = [Mock(text="Test response from Claude")]
+        mock_client.messages.create.return_value = mock_response
+        mock_anthropic.return_value = mock_client
+        
+        chatbot = ClaudeChatbot()
+        chatbot.current_chat.add_message("user", "Test question")
+        
+        # Mock the run method's response display logic
+        response = chatbot._get_ai_response("Test question")
+        
+        # Verify response doesn't contain provider prefixes
+        assert response == "Test response from Claude"
+        assert "Anthropic AI:" not in response
+        assert "Anthropic:" not in response
+        assert "Claude:" not in response
+    
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
+    @patch("clommand.openai.OpenAI")
+    def test_openai_response_no_provider_prefix(self, mock_openai, capsys):
+        """Test that OpenAI responses don't include provider prefix"""
+        # Mock the API response
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Test response from GPT"
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        chatbot = ClaudeChatbot()
+        chatbot.current_model = "gpt4"
+        chatbot.current_chat.add_message("user", "Test question")
+        
+        response = chatbot._get_ai_response("Test question")
+        
+        # Verify response doesn't contain provider prefixes
+        assert response == "Test response from GPT"
+        assert "OpenAI AI:" not in response
+        assert "OpenAI:" not in response
+        assert "GPT:" not in response
+        assert "ChatGPT:" not in response
+    
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
+    @patch("clommand.openai.OpenAI")
+    def test_o1_model_response_no_provider_prefix(self, mock_openai):
+        """Test that o1 model responses don't include provider prefix"""
+        # Mock the API response
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Reasoning response from o1"
+        mock_response.usage = Mock()
+        mock_response.usage.completion_tokens = 100
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        chatbot = ClaudeChatbot()
+        chatbot.current_model = "o1-mini"
+        chatbot.current_chat.add_message("user", "Complex reasoning question")
+        
+        response = chatbot._get_ai_response("Complex reasoning question")
+        
+        # Verify response doesn't contain provider prefixes
+        assert response == "Reasoning response from o1"
+        assert "OpenAI:" not in response
+        assert "o1:" not in response
+        assert "o1-mini:" not in response
+    
+    def test_error_responses_no_provider_prefix(self):
+        """Test that error responses don't include provider prefix"""
+        chatbot = ClaudeChatbot()
+        
+        # Test with no client
+        response = chatbot._get_ai_response("Test question")
+        
+        # Should be an error, but shouldn't have provider prefix
+        assert response.startswith("Error:")
+        assert "Anthropic:" not in response
+        assert "OpenAI:" not in response
+    
+    def test_response_formatting_preserved(self):
+        """Test that response formatting is preserved without provider prefix"""
+        chatbot = ClaudeChatbot()
+        
+        # Test the format response method directly with short text (under 75 chars)
+        test_response = "This is a short test response without provider prefix."
+        formatted = chatbot._format_response(test_response)
+        
+        # Should be the same (no prefix removal in formatting)
+        assert formatted == test_response
+        assert ":" not in formatted.split()[0]  # First word shouldn't end with colon
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
