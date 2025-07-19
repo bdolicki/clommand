@@ -164,9 +164,9 @@ class ClaudeChatbot:
     
     def _get_prompt(self) -> str:
         if self.current_chat.title:
-            return f"{self.current_chat.title}> "
+            return f"{self.current_chat.title}::{self.current_model}> "
         else:
-            return "untitled-chat> "
+            return f"untitled-chat::{self.current_model}> "
     
     def _setup_readline(self):
         readline.set_completer(self._completer)
@@ -634,7 +634,7 @@ class ClaudeChatbot:
                     formatted_lines.append(line)
                 else:
                     # Wrap long lines while preserving word boundaries
-                    wrapped_lines = textwrap.wrap(line, width=75, break_long_words=False, break_on_hyphens=False)
+                    wrapped_lines = textwrap.wrap(line, width=75, break_long_words=False, break_on_hyphens=False, initial_indent='', subsequent_indent='')
                     formatted_lines.extend(wrapped_lines)
             
             # Rejoin lines with single newlines
@@ -842,6 +842,7 @@ class ClaudeChatbot:
                     if char == '\r' or char == '\n':
                         if not in_paste_mode:
                             # Normal Enter - submit input
+                            print('\r', end='', flush=True)  # Return to beginning of line
                             print()  # Move to next line
                             break
                         else:
@@ -898,7 +899,7 @@ class ClaudeChatbot:
         
         while self.running:
             try:
-                user_input = self._get_input_with_paste_detection(f"\n{self._get_prompt()}")
+                user_input = self._get_input_with_paste_detection(self._get_prompt())
                 
                 if user_input.startswith('/'):
                     if user_input.strip() == '/':
@@ -925,7 +926,6 @@ class ClaudeChatbot:
                 # Add user message to history first (needed for API context)
                 self.current_chat.add_message("user", user_input)
                 
-                print(f"\n{self._get_model_provider(self.current_model).title()} AI:")
                 response = self._get_ai_response(user_input)
                 
                 # Check if response is an error (starts with "Error:")
