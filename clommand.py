@@ -634,7 +634,7 @@ class ClaudeChatbot:
                     formatted_lines.append(line)
                 else:
                     # Wrap long lines while preserving word boundaries
-                    wrapped_lines = textwrap.wrap(line, width=75, break_long_words=False, break_on_hyphens=False)
+                    wrapped_lines = textwrap.wrap(line, width=75, break_long_words=False, break_on_hyphens=False, initial_indent='', subsequent_indent='')
                     formatted_lines.extend(wrapped_lines)
             
             # Rejoin lines with single newlines
@@ -842,6 +842,7 @@ class ClaudeChatbot:
                     if char == '\r' or char == '\n':
                         if not in_paste_mode:
                             # Normal Enter - submit input
+                            print('\r', end='', flush=True)  # Return to beginning of line
                             print()  # Move to next line
                             break
                         else:
@@ -898,7 +899,7 @@ class ClaudeChatbot:
         
         while self.running:
             try:
-                user_input = self._get_input_with_paste_detection(f"\n{self._get_prompt()}")
+                user_input = self._get_input_with_paste_detection(self._get_prompt())
                 
                 if user_input.startswith('/'):
                     if user_input.strip() == '/':

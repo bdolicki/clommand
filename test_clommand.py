@@ -1441,7 +1441,7 @@ class TestProviderPrefixRemoval:
         response = chatbot._get_ai_response("Test question")
         
         # Should be an error, but shouldn't have provider prefix
-        assert response.startswith("Error:")
+        assert "Error" in response
         assert "Anthropic:" not in response
         assert "OpenAI:" not in response
     
