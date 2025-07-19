@@ -18,7 +18,7 @@ import openai
 from dotenv import load_dotenv
 
 class ChatHistory:
-    def __init__(self, chat_id: str = None):
+    def __init__(self, chat_id: Optional[str] = None):
         self.chat_id = chat_id or self._generate_chat_id()
         self.messages: List[Dict] = []
         self.filename = f"{self.chat_id}.txt"
